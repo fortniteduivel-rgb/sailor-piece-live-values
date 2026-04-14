@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sailor Piece Live Value Table</title>
+    <meta name="description" content="A standalone live-updating Sailor Piece value table for sharing.">
+    <style>
+        :root {
+            --bg: #11071d;
+            --panel: #1c1030;
+            --panel-strong: #271644;
+            --line: rgba(214, 184, 255, 0.16);
+            --text: #f5efff;
+            --muted: #c0aedb;
+            --accent: #be8cff;
+            --good: #c8a4ff;
+            --bad: #ff8ed2;
+            --warn: #ffd166;
+            --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            color-scheme: dark;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(190, 140, 255, 0.18), transparent 34%),
+                radial-gradient(circle at top right, rgba(255, 142, 210, 0.12), transparent 28%),
+                linear-gradient(180deg, #170a29 0%, #11071d 100%);
+        }
+
+        .shell {
+            width: min(1440px, calc(100% - 24px));
+            margin: 0 auto;
+            padding: 16px 0 24px;
+        }
+
+        .status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: rgba(25, 14, 42, 0.86);
+            box-shadow: var(--shadow);
+        }
+
+        .status-title {
+            margin: 0;
+            font-size: 0.98rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .status-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 11px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .status-pill::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--accent);
+            box-shadow: 0 0 12px var(--accent);
+        }
+
+        .status-pill.is-loading::before {
+            background: var(--warn);
+            box-shadow: 0 0 12px var(--warn);
+        }
+
+        .status-pill.is-error::before {
+            background: var(--bad);
+            box-shadow: 0 0 12px var(--bad);
+        }
+
+        .table-shell {
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            background: rgba(22, 12, 37, 0.9);
+            box-shadow: var(--shadow);
+        }
+
+        .table-wrap {
+            overflow: auto;
+            max-height: calc(100vh - 110px);
+        }
+
+        table {
+            width: 100%;
+            min-width: 980px;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            padding: 14px 16px;
+            text-align: left;
+            background: rgba(33, 19, 55, 0.96);
+            color: var(--muted);
+            font-size: 0.77rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            backdrop-filter: blur(16px);
+        }
+
+        tbody tr {
+            border-top: 1px solid rgba(172, 206, 255, 0.08);
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        td {
+            padding: 13px 16px;
+            vertical-align: middle;
+        }
+
+        .item-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 250px;
+        }
+
+        .item-image {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            object-fit: cover;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+
+        .item-name {
+            display: block;
+            font-size: 0.95rem;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+
+        .value-chip,
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 7px 10px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+
+        .value-chip {
+            background: rgba(190, 140, 255, 0.14);
+            color: var(--accent);
+            font-weight: 800;
+        }
+
+        .value-chip.value-oc {
+            background: linear-gradient(135deg, rgba(190, 140, 255, 0.22), rgba(255, 142, 210, 0.18));
+            color: #ffd7ff;
+            box-shadow: inset 0 0 0 1px rgba(255, 214, 255, 0.14);
+        }
+
+        .value-chip.value-na {
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .badge {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+            font-size: 0.82rem;
+            font-weight: 700;
+            gap: 8px;
+        }
+
+        .badge.available {
+            color: var(--good);
+            background: rgba(125, 240, 161, 0.1);
+        }
+
+        .badge.unavailable {
+            color: var(--bad);
+            background: rgba(255, 123, 143, 0.1);
+        }
+
+        .badge.has-indicator::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: currentColor;
+            box-shadow: 0 0 10px currentColor;
+            flex-shrink: 0;
+        }
+
+        .badge.stability-rising {
+            color: #7df0a1;
+            background: rgba(125, 240, 161, 0.1);
+        }
+
+        .badge.stability-stable {
+            color: #4bdcc7;
+            background: rgba(75, 220, 199, 0.11);
+        }
+
+        .badge.stability-fairpaid {
+            color: #7bc8ff;
+            background: rgba(123, 200, 255, 0.12);
+        }
+
+        .badge.stability-underpaid {
+            color: #ffb86b;
+            background: rgba(255, 184, 107, 0.12);
+        }
+
+        .badge.stability-unstable {
+            color: #ffd166;
+            background: rgba(255, 209, 102, 0.13);
+        }
+
+        .badge.stability-dropping {
+            color: #ff7b8f;
+            background: rgba(255, 123, 143, 0.12);
+        }
+
+        .badge.stability-na {
+            color: #a5b8d6;
+            background: rgba(165, 184, 214, 0.12);
+        }
+
+        .badge.stability-oc {
+            color: #f1c6ff;
+            background: rgba(241, 198, 255, 0.14);
+        }
+
+        .badge.live-average {
+            color: #e7c9ff;
+            background: rgba(190, 140, 255, 0.14);
+            border-color: rgba(190, 140, 255, 0.22);
+        }
+
+        .badge.live-average-empty {
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .empty-state,
+        .error-state {
+            padding: 56px 20px;
+            text-align: center;
+        }
+
+        .empty-state h2,
+        .error-state h2 {
+            margin: 0 0 10px;
+            font-size: 1.2rem;
+        }
+
+        .empty-state p,
+        .error-state p {
+            margin: 0 auto;
+            max-width: 54ch;
+            color: var(--muted);
+            line-height: 1.65;
+        }
+
+        @media (max-width: 720px) {
+            .shell {
+                width: min(100% - 12px, 1440px);
+                padding-top: 8px;
+                padding-bottom: 12px;
+            }
+
+            .status-bar {
+                padding: 10px 12px;
+                border-radius: 16px;
+            }
+
+            .table-shell {
+                border-radius: 18px;
+            }
+
+            .table-wrap {
+                max-height: calc(100vh - 90px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="status-bar">
+            <p class="status-title">Sailor Piece Live Value Table</p>
+            <div class="status-meta">
+                <span id="status-pill" class="status-pill">Loading live values</span>
+                <span id="summary-text">Connecting to source</span>
+            </div>
+        </section>
+
+        <section class="table-shell">
+            <div class="table-wrap">
+                <table aria-describedby="status-pill">
+                    <thead>
+                        <tr>
+                            <th scope="col">Item</th>
+                            <th scope="col">Category</th>
+                            <th scope="col">Web Value</th>
+                            <th scope="col">Live Trade Value</th>
+                            <th scope="col">Demand</th>
+                            <th scope="col">Stability</th>
+                            <th scope="col">Availability</th>
+                            <th scope="col">Last Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        <tr>
+                            <td colspan="8">
+                                <div class="empty-state">
+                                    <h2>Loading live values</h2>
+                                    <p>The table fetches the latest Sailor Piece values automatically when the file opens.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const SOURCE_API_URL = "https://valuevaultx.com/_functions/api/sailor-piece";
+        const TRADE_AVG_API_URL = "/api/live-trade-averages";
+        const REFRESH_INTERVAL_MS = 60000;
+        const TRADE_AVG_REFRESH_INTERVAL_MS = 3600000;
+        const LIVE_TRADE_VARIANCE_LIMIT = 0.5;
+
+        const state = {
+            items: [],
+            refreshTimer: null,
+            tradeRefreshTimer: null,
+            lastFetchedAt: null,
+            lastTradeAverageFetchedAt: null,
+            tradeAverageMap: {},
+            tradeAverageWindowHours: null,
+            tradeAverageAvailable: false,
+            tradeAverageError: "",
+            syncState: "idle",
+            errorMessage: ""
+        };
+
+        const elements = {
+            tableBody: document.getElementById("table-body"),
+            statusPill: document.getElementById("status-pill"),
+            summaryText: document.getElementById("summary-text")
+        };
+
+        const numberFormatter = new Intl.NumberFormat("en-US", {
+            maximumFractionDigits: 2
+        });
+
+        const timestampFormatter = new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short"
+        });
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#39;");
+        }
+
+        function formatNumber(value) {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numberFormatter.format(numeric) : "N/A";
+        }
+
+        function normalizeLiveTradeNumericValue(value) {
+            const numeric = Number(value);
+
+            if (!Number.isFinite(numeric)) {
+                return null;
+            }
+
+            return numeric > 10000
+                ? Math.ceil(numeric / 100) * 100
+                : Math.round(numeric / 2) * 2;
+        }
+
+        function formatLiveTradeValue(value) {
+            const rounded = normalizeLiveTradeNumericValue(value);
+            return rounded === null ? "N/A" : formatNumber(rounded);
+        }
+
+        function getLiveTradeMeta(item) {
+            const liveAverage = state.tradeAverageMap[item.id];
+            const roundedLiveValue = normalizeLiveTradeNumericValue(liveAverage?.average_cRR);
+
+            if (roundedLiveValue === null) {
+                if (state.tradeAverageAvailable) {
+                    return {
+                        label: "No direct CRR ads",
+                        className: "badge live-average live-average-empty",
+                        sortValue: null
+                    };
+                }
+
+                if (state.tradeAverageError) {
+                    return {
+                        label: "Unavailable",
+                        className: "badge live-average live-average-empty",
+                        sortValue: null
+                    };
+                }
+
+                return {
+                    label: "—",
+                    className: "badge live-average live-average-empty",
+                    sortValue: null
+                };
+            }
+
+            if (!item.valueMeta.isOverCap && Number.isFinite(item.valueMeta.sortValue) && item.valueMeta.sortValue > 0) {
+                const varianceRatio = Math.abs(roundedLiveValue - item.valueMeta.sortValue) / item.valueMeta.sortValue;
+
+                if (varianceRatio >= LIVE_TRADE_VARIANCE_LIMIT) {
+                    return {
+                        label: "No direct CRR ads",
+                        className: "badge live-average live-average-empty",
+                        sortValue: null
+                    };
+                }
+            }
+
+            return {
+                label: formatLiveTradeValue(roundedLiveValue) + " CRR",
+                className: "badge live-average",
+                sortValue: roundedLiveValue
+            };
+        }
+
+        function normalizeValue(value) {
+            const numeric = Number(value);
+
+            if (numeric === -1) {
+                return {
+                    label: "O/C CRR",
+                    sortValue: Number.MAX_SAFE_INTEGER,
+                    className: "value-oc",
+                    isOverCap: true
+                };
+            }
+
+            if (numeric === -2 || !Number.isFinite(numeric)) {
+                return {
+                    label: "N/A",
+                    sortValue: Number.NEGATIVE_INFINITY,
+                    className: "value-na",
+                    isOverCap: false
+                };
+            }
+
+            return {
+                label: formatNumber(numeric) + " CRR",
+                sortValue: numeric,
+                className: "",
+                isOverCap: false
+            };
+        }
+
+        function normalizeDemand(value) {
+            const normalized = String(value ?? "").trim();
+
+            if (!normalized) {
+                return "Unknown";
+            }
+
+            return normalized
+                .replace(/meduim/gi, "Medium")
+                .replace(/\b(low|medium|high)\b/gi, match => {
+                    const lower = match.toLowerCase();
+                    return lower.charAt(0).toUpperCase() + lower.slice(1);
+                })
+                .replace(/\s*-\s*/g, " - ")
+                .replace(/\b(Low|Medium|High)\s+(\d)\b/g, "$1 - $2")
+                .replace(/\s{2,}/g, " ");
+        }
+
+        function formatTimestamp(value) {
+            if (!value) {
+                return "Unknown";
+            }
+
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? "Unknown" : timestampFormatter.format(date);
+        }
+
+        function normalizeAvailability(value) {
+            const normalized = String(value ?? "").trim().toLowerCase();
+
+            if (["available", "yes", "true", "1"].includes(normalized)) {
+                return {
+                    label: "Available",
+                    className: "available"
+                };
+            }
+
+            if (["unavailable", "no", "false", "0"].includes(normalized)) {
+                return {
+                    label: "Unavailable",
+                    className: "unavailable"
+                };
+            }
+
+            return {
+                label: value || "Unknown",
+                className: ""
+            };
+        }
+
+        function normalizeStability(value, valueMeta) {
+            if (valueMeta && valueMeta.isOverCap) {
+                return {
+                    label: "No Stable Price",
+                    className: "has-indicator stability-oc"
+                };
+            }
+
+            const normalized = String(value ?? "").trim().toLowerCase();
+
+            if (normalized === "rising") {
+                return {
+                    label: "Rising",
+                    className: "has-indicator stability-rising"
+                };
+            }
+
+            if (normalized === "stable") {
+                return {
+                    label: "Stable",
+                    className: "has-indicator stability-stable"
+                };
+            }
+
+            if (normalized === "fairpaid") {
+                return {
+                    label: "Fair Paid",
+                    className: "has-indicator stability-fairpaid"
+                };
+            }
+
+            if (normalized === "underpaid") {
+                return {
+                    label: "Underpaid",
+                    className: "has-indicator stability-underpaid"
+                };
+            }
+
+            if (normalized === "unstable") {
+                return {
+                    label: "Unstable",
+                    className: "has-indicator stability-unstable"
+                };
+            }
+
+            if (normalized === "dropping") {
+                return {
+                    label: "Dropping",
+                    className: "has-indicator stability-dropping"
+                };
+            }
+
+            if (["n/a", "na", ""].includes(normalized)) {
+                return {
+                    label: "N/A",
+                    className: "has-indicator stability-na"
+                };
+            }
+
+            return {
+                label: value || "Unknown",
+                className: "has-indicator stability-na"
+            };
+        }
+
+        function normalizeItems(rawItems) {
+            return rawItems.map(item => ({
+                id: item._id,
+                title: item.title || "Untitled",
+                category: item.category || "Uncategorized",
+                rawValue: Number(item.value),
+                valueMeta: normalizeValue(item.value),
+                demand: normalizeDemand(item.demand),
+                stability: item.stability || "Unknown",
+                availability: item.availability || "Unknown",
+                imageLink: item.imageLink || "",
+                updatedAt: item._updatedDate || item._createdDate || null
+            })).sort((left, right) => {
+                const valueDiff = right.valueMeta.sortValue - left.valueMeta.sortValue;
+                if (valueDiff !== 0) {
+                    return valueDiff;
+                }
+
+                return left.title.localeCompare(right.title);
+            });
+        }
+
+        function updateStatus() {
+            elements.statusPill.classList.remove("is-loading", "is-error");
+
+            if (state.syncState === "loading") {
+                elements.statusPill.classList.add("is-loading");
+                elements.statusPill.textContent = "Loading live values";
+                elements.summaryText.textContent = "Connecting to source";
+                return;
+            }
+
+            if (state.syncState === "error") {
+                elements.statusPill.classList.add("is-error");
+                elements.statusPill.textContent = "Live sync failed";
+                elements.summaryText.textContent = state.errorMessage;
+                return;
+            }
+
+            if (!state.lastFetchedAt) {
+                elements.statusPill.textContent = "Waiting for first sync";
+                elements.summaryText.textContent = "Connecting to source";
+                return;
+            }
+
+            elements.statusPill.textContent = "Live values active";
+            let summary = state.items.length + " items • last synced " + formatTimestamp(state.lastFetchedAt);
+
+            if (state.tradeAverageAvailable && state.tradeAverageWindowHours) {
+                summary += " • trade avg " + state.tradeAverageWindowHours + "h";
+            } else if (state.tradeAverageError) {
+                summary += " • trade avg unavailable";
+            }
+
+            elements.summaryText.textContent = summary;
+        }
+
+        function renderError(message) {
+            elements.tableBody.innerHTML = `
+                <tr>
+                    <td colspan="8">
+                        <div class="error-state">
+                            <h2>Unable to load the live table</h2>
+                            <p>${escapeHtml(message)}</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function renderTable() {
+            if (!state.items.length) {
+                elements.tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="8">
+                            <div class="empty-state">
+                                <h2>No values were returned</h2>
+                                <p>The live source responded, but the table did not include any rows.</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            const rankedItems = [...state.items].sort((left, right) => {
+                const webValueDiff = right.valueMeta.sortValue - left.valueMeta.sortValue;
+                if (webValueDiff !== 0) {
+                    return webValueDiff;
+                }
+
+                if (left.valueMeta.isOverCap && right.valueMeta.isOverCap) {
+                    const leftLiveValue = getLiveTradeMeta(left).sortValue;
+                    const rightLiveValue = getLiveTradeMeta(right).sortValue;
+
+                    if (leftLiveValue !== null && rightLiveValue !== null && rightLiveValue !== leftLiveValue) {
+                        return rightLiveValue - leftLiveValue;
+                    }
+
+                    if (rightLiveValue !== null && leftLiveValue === null) {
+                        return 1;
+                    }
+
+                    if (leftLiveValue !== null && rightLiveValue === null) {
+                        return -1;
+                    }
+                }
+
+                return left.title.localeCompare(right.title);
+            });
+
+            elements.tableBody.innerHTML = rankedItems.map(item => {
+                const availability = normalizeAvailability(item.availability);
+                const stability = normalizeStability(item.stability, item.valueMeta);
+                const liveTradeMeta = getLiveTradeMeta(item);
+
+                return `
+                    <tr>
+                        <td>
+                            <div class="item-cell">
+                                <img class="item-image" src="${escapeHtml(item.imageLink)}" alt="${escapeHtml(item.title)}" loading="lazy">
+                                <div>
+                                    <span class="item-name">${escapeHtml(item.title)}</span>
+                                </div>
+                            </div>
+                        </td>
+                        <td>${escapeHtml(item.category)}</td>
+                        <td><span class="value-chip ${item.valueMeta.className}">${escapeHtml(item.valueMeta.label)}</span></td>
+                        <td><span class="${liveTradeMeta.className}">${escapeHtml(liveTradeMeta.label)}</span></td>
+                        <td><span class="badge">${escapeHtml(item.demand)}</span></td>
+                        <td><span class="badge ${stability.className}">${escapeHtml(stability.label)}</span></td>
+                        <td><span class="badge ${availability.className}">${escapeHtml(availability.label)}</span></td>
+                        <td>${escapeHtml(formatTimestamp(item.updatedAt))}</td>
+                    </tr>
+                `;
+            }).join("");
+        }
+
+        function scheduleRefresh() {
+            if (state.refreshTimer) {
+                clearTimeout(state.refreshTimer);
+            }
+
+            state.refreshTimer = window.setTimeout(fetchLiveData, REFRESH_INTERVAL_MS);
+        }
+
+        function scheduleTradeAverageRefresh() {
+            if (state.tradeRefreshTimer) {
+                clearTimeout(state.tradeRefreshTimer);
+            }
+
+            state.tradeRefreshTimer = window.setTimeout(fetchTradeAverages, TRADE_AVG_REFRESH_INTERVAL_MS);
+        }
+
+        async function fetchLiveData() {
+            state.syncState = "loading";
+            updateStatus();
+
+            try {
+                const response = await fetch(SOURCE_API_URL, {
+                    cache: "no-store"
+                });
+
+                if (!response.ok) {
+                    throw new Error("Source returned HTTP " + response.status + ".");
+                }
+
+                const payload = await response.json();
+                if (!Array.isArray(payload)) {
+                    throw new Error("Source payload was not an array.");
+                }
+
+                state.items = normalizeItems(payload);
+                state.lastFetchedAt = new Date().toISOString();
+                state.syncState = "ready";
+                state.errorMessage = "";
+                renderTable();
+            } catch (error) {
+                state.syncState = "error";
+                state.errorMessage = error.message;
+                renderError(error.message);
+            } finally {
+                updateStatus();
+                scheduleRefresh();
+            }
+        }
+
+        async function fetchTradeAverages() {
+            try {
+                const response = await fetch(TRADE_AVG_API_URL, {
+                    cache: "no-store"
+                });
+
+                if (!response.ok) {
+                    throw new Error("Trade ads source returned HTTP " + response.status + ".");
+                }
+
+                const payload = await response.json();
+                if (!payload || typeof payload !== "object" || !payload.items || typeof payload.items !== "object") {
+                    throw new Error("Trade ads payload was invalid.");
+                }
+
+                state.tradeAverageMap = payload.items;
+                state.tradeAverageWindowHours = Number(payload.window_hours) || null;
+                state.tradeAverageAvailable = true;
+                state.tradeAverageError = "";
+                state.lastTradeAverageFetchedAt = new Date().toISOString();
+
+                if (state.items.length) {
+                    renderTable();
+                }
+            } catch (error) {
+                state.tradeAverageMap = {};
+                state.tradeAverageWindowHours = null;
+                state.tradeAverageAvailable = false;
+                state.tradeAverageError = error.message;
+                if (state.items.length) {
+                    renderTable();
+                }
+            } finally {
+                updateStatus();
+                scheduleTradeAverageRefresh();
+            }
+        }
+
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) {
+                fetchLiveData();
+
+                if (!state.lastTradeAverageFetchedAt || (Date.now() - new Date(state.lastTradeAverageFetchedAt).getTime()) > TRADE_AVG_REFRESH_INTERVAL_MS) {
+                    fetchTradeAverages();
+                }
+            }
+        });
+
+        fetchLiveData();
+        fetchTradeAverages();
+    </script>
+</body>
+</html>
